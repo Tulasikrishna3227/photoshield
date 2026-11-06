@@ -11,6 +11,7 @@ differentiable JPEG / resize / blur.
     python protect.py in.jpg out.png       # CLI; add --robust for robust mode. Always save PNG.
     python evaluate.py --images ./test_images --eps 8 --out results.csv
     python ablate.py   --images ./test_images --n 8 --out ablation_v3.csv
+    python make_figure.py --image my_photo.jpg --out docs/demo.png   # before/after figure (use your own photo)
 
 ## Method
 1. Encode a target (high-frequency checkerboard) with the SD VAE to get a "garbage" latent.
@@ -64,8 +65,13 @@ Findings:
 - At eps 8, robust training raises the score after post-processing by about 20% (JPEG q75),
   22% (JPEG q50, held out), 38% (resize) and 24% (blur), at a cost of about 9% on unprocessed
   images, with PSNR unchanged.
-- Robust eps 6 beats plain eps 8 on every post-processed column while being less visible
-  (40.7 vs 38.1 dB).
+- Robust eps 6 beats plain eps 8 on average on every post-processed column while being less
+  visible (40.7 vs 38.1 dB); per image it wins 4/8 (JPEG q75) to 7/8 (blur), so that one is
+  a weaker claim than the eps 8 comparison.
+- Per-image paired comparison, robust eps 8 vs plain eps 8: higher after post-processing in
+  28 of 32 image/attack pairs (resize 8/8, JPEG q50 7/8, blur 7/8, JPEG q75 6/8); lower on
+  unprocessed images in 7 of 8. The JPEG q75 gain is within noise at n=8 (+0.057, s.e. 0.040);
+  the resize, blur and JPEG q50 gains are about 2.5 to 4 standard errors.
 - Every protected variant stays well above the random-noise control.
 - Still only partial protection: scores after JPEG/resize are below the unprocessed scores.
 
