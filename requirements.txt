@@ -1,0 +1,11 @@
+torch
+diffusers>=0.30
+transformers
+accelerate
+gradio>=4
+pillow
+numpy
+scikit-image
+lpips
+pandas
+tabulate
