@@ -44,11 +44,30 @@ Metric: LPIPS between the SD1.5 img2img edit of the original and of the protecte
 | eps 8, Gaussian-noise training | 0.392 | 0.279 | 0.241 | 38.5 |
 | eps 12, Gaussian-noise training | 0.427 | 0.321 | 0.251 | 35.1 |
 
-Findings: the perturbation is far stronger than random noise of equal magnitude, but about half
-of the effect is lost after JPEG/resize. Training through Gaussian noise did not help.
+Findings: the perturbation is far stronger than random noise of equal magnitude, but a large
+part of the effect is lost after JPEG/resize. Training through Gaussian noise did not help;
+v3 below fixes this with transform-aware training.
 
-### Ablation v3: transform-robust (EOT) training
-_To be filled from `ablation_v3.csv` (includes held-out JPEG q50)._
+### Ablation v3: transform-robust (EOT) training (8 images, 1 prompt)
+JPEG q50 is held out of training (robust training samples JPEG quality 55-90, so q50 is only
+slightly outside that range).
+
+| Variant | none | JPEG q75 | JPEG q50 | resize 50% | blur | PSNR |
+|---|---|---|---|---|---|---|
+| random-noise control (eps 8) | 0.255 | 0.156 | 0.170 | 0.097 | 0.165 | 37.2 |
+| eps 8, plain PGD | 0.445 | 0.279 | 0.249 | 0.224 | 0.271 | 38.1 |
+| eps 6, robust | 0.378 | 0.310 | 0.269 | 0.282 | 0.307 | 40.7 |
+| eps 8, robust | 0.406 | 0.336 | 0.304 | 0.310 | 0.336 | 38.3 |
+| eps 12, robust | 0.462 | 0.381 | 0.353 | 0.384 | 0.390 | 34.9 |
+
+Findings:
+- At eps 8, robust training raises the score after post-processing by about 20% (JPEG q75),
+  22% (JPEG q50, held out), 38% (resize) and 24% (blur), at a cost of about 9% on unprocessed
+  images, with PSNR unchanged.
+- Robust eps 6 beats plain eps 8 on every post-processed column while being less visible
+  (40.7 vs 38.1 dB).
+- Every protected variant stays well above the random-noise control.
+- Still only partial protection: scores after JPEG/resize are below the unprocessed scores.
 
 ## Limitations
 - Small evaluation: 16 images (15 web-sourced portraits not redistributed here, 1 personal

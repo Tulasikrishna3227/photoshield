@@ -1,30 +1,31 @@
 import gradio as gr
-from PIL import Image
 
 from protect import protect
 
-NOTE = ("Protection is not a guarantee. It can be weakened by heavy JPEG compression, "
-        "resizing, screenshots, or purification methods. Always download the PNG.")
+NOTE = ("Protection is partial, not a guarantee. It targets Stable Diffusion based editors and can be "
+        "weakened by heavy compression, resizing, screenshots or purification. Download the PNG; "
+        "re-saving as JPEG reduces the effect. Images are resized to at most 512 px.")
+STRENGTH = {"Standard (6/255)": 6, "Strong (8/255)": 8, "Maximum (12/255)": 12}
 
 
-def run(img, strength, steps, robust, progress=gr.Progress()):  # robust = survives JPEG/resize better
+def run(img, strength, steps, robust, progress=gr.Progress()):
     if img is None:
         raise gr.Error("Upload an image first.")
-    eps = {"Low (4/255)": 4, "Medium (8/255)": 8, "High (12/255)": 12}[strength] / 255
-    out = protect(img, eps=eps, steps=int(steps), robust=bool(robust), progress=progress)
+    out = protect(img, eps=STRENGTH[strength] / 255, steps=int(steps),
+                  robust=bool(robust), progress=progress)
     out.save("protected.png", format="PNG")
     return out, "protected.png"
 
 
 with gr.Blocks(title="PhotoShield") as demo:
-    gr.Markdown("# PhotoShield\nInvisible protection that makes AI edits of your photo come out broken.")
+    gr.Markdown("# PhotoShield\nInvisible protection that makes Stable Diffusion edits of your photo "
+                "come out distorted.")
     with gr.Row():
         inp = gr.Image(type="pil", label="Original photo")
         out = gr.Image(type="pil", label="Protected photo")
-    strength = gr.Radio(["Low (4/255)", "Medium (8/255)", "High (12/255)"],
-                        value="Medium (8/255)", label="Strength")
-    steps = gr.Slider(20, 200, value=100, step=10, label="Optimization steps")
-    robust = gr.Checkbox(label="Robust mode (optimised through JPEG/resize/blur)")
+    strength = gr.Radio(list(STRENGTH), value="Strong (8/255)", label="Strength")
+    steps = gr.Slider(20, 200, value=100, step=10, label="Optimization steps (more = stronger, slower)")
+    robust = gr.Checkbox(value=True, label="Robust mode (recommended: survives JPEG/resize/blur better)")
     btn = gr.Button("Protect", variant="primary")
     file = gr.File(label="Download PNG")
     gr.Markdown(NOTE)
