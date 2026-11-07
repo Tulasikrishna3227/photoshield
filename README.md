@@ -1,90 +1,108 @@
-# PhotoShield: adversarial protection against AI photo editing
+# PhotoShield: adversarial perturbations against Stable Diffusion photo editing
 
-Adds an invisible, texture-masked perturbation to a photo so Stable Diffusion based editors
-(img2img, inpainting) produce destroyed outputs. PGD encoder attack on the SD VAE
-(PhotoGuard-style), plus an optional transform-robust mode that optimises through
-differentiable JPEG / resize / blur.
+An implementation and an honest evaluation of an encoder-level adversarial perturbation
+(PhotoGuard-style) meant to make Stable Diffusion edits of a photo fail. It adds an invisible,
+texture-masked perturbation to a photo; an optional robust mode optimises through random
+JPEG / resize / blur.
+
+## Summary of findings
+- **Works against low-strength edits on unprocessed images.** SD1.5 img2img at strength 0.3:
+  the edit of the protected photo drifts away from the source on 15 of 16 test images, versus
+  0 of 16 for random noise of the same size.
+- **Does not stop scene-changing edits.** At strength 0.6 the edits of protected photos follow
+  the prompt as well as edits of unprotected ones (CLIP test), no better than the noise control.
+- **Fragile to post-processing.** After JPEG q75 or a 50% resize, plain protection falls to
+  near noise level (0 to 1 of 16 images). Robust training recovers part of it (robust eps 12:
+  6/16 after JPEG, 5/16 after resize), at the cost of visibility (about 35 dB PSNR in an
+  8-image test).
+- **My first metric overstated the results.** LPIPS between the edit of the original and the
+  edit of the protected image only shows that the edits differ, and random noise makes them
+  differ too. I replaced it with a drift-from-source metric and a noise control.
 
 ## Run
     pip install -r requirements.txt
-    python app.py                          # web demo (Gradio)
-    python protect.py in.jpg out.png       # CLI; add --robust for robust mode. Always save PNG.
-    python evaluate.py --images ./test_images --eps 8 --out results.csv
-    python ablate.py   --images ./test_images --n 8 --out ablation_v3.csv
-    python make_figure.py --image my_photo.jpg --out docs/demo.png   # before/after figure (use your own photo)
+    python app.py                                   # Gradio demo
+    python protect.py in.jpg out.png [--robust]     # CLI; always save PNG
+    python strength_eval.py --images ./test_images --strengths 0.3 --attacks none,jpeg75,resize50
+    python clip_eval.py     --images ./test_images --n 16
+    python make_figure.py   --image my_photo.jpg --out docs/demo.png   # use a photo you own
 
 ## Method
-1. Encode a target (high-frequency checkerboard) with the SD VAE to get a "garbage" latent.
-2. PGD (100 steps) finds delta so VAE(x + delta) matches that latent, with |delta| <= eps * mask.
-3. The mask is high on textured regions (hair, fabric) and low on flat regions (walls, skin),
-   which removed the visible blotches a uniform eps produced.
+1. Encode a high-frequency checkerboard with the SD VAE to get a "garbage" target latent.
+2. PGD (100 steps) finds delta so VAE(x + delta) matches it, with |delta| <= eps * mask.
+3. The mask is high on textured areas and low on flat ones (walls, skin), which removed the
+   visible blotches a uniform eps produced.
 4. Robust mode: each PGD step passes x + delta through a random differentiable transform
-   (JPEG approx via 8x8 DCT + straight-through rounding, resize, Gaussian blur).
+   (JPEG approximation via 8x8 DCT with straight-through rounding, resize, Gaussian blur).
+
+## Evaluation protocol
+- **Edit model:** SD1.5 img2img, 30 steps, guidance 7.5, fixed seed.
+- **Primary metric, shift:** LPIPS(edit(variant), original) - LPIPS(edit(original), original).
+  At low strength an edit of an unprotected photo stays close to the photo; a working protection
+  makes the edit drift or break.
+- **Control:** random +-eps sign noise with the same texture mask and eps. Control shift is
+  0.006 to 0.018, so a shift above 0.10 is clearly beyond noise (threshold chosen before
+  seeing the data).
+- **CLIP prompt adherence** for strength 0.6: drop in CLIP(prompt, edit) versus the edit of the
+  original.
+- **Test set:** 16 images (15 web-sourced portraits, not redistributed, and 1 personal photo).
+  Image names in the CSVs are anonymised.
+- **Raw data:** per-image CSVs are included for the ablations (`ablation_v2.csv`, `ablation_v3.csv`,
+  `results_v2_eps6.csv`) and the strength 0.3/0.5 run (`strength_eval.csv`). The post-processing
+  run and the CLIP run were reported from console output; their per-image CSVs were not saved
+  because the compute session reset before download.
 
 ## Results
-Metric: LPIPS between the SD1.5 img2img edit of the original and of the protected image
-(same prompt and seed). Higher = edit more destroyed. PSNR/SSIM measure invisibility.
-
-### Baseline, eps 6/255, masked, plain PGD (16 images, 2 prompts)
-| Post-processing | PSNR | SSIM | Edit LPIPS |
+### Low-strength img2img, unprocessed images (mean shift; images with shift > 0.10 of 16)
+| Variant | strength 0.3 | strength 0.5 | PSNR |
 |---|---|---|---|
-| none | 40.3 | 0.985 | 0.422 |
-| JPEG q75 | 40.3 | 0.985 | 0.224 |
-| blur | 40.3 | 0.985 | 0.203 |
-| resize 50% | 40.3 | 0.985 | 0.186 |
+| random-noise control (eps 8) | 0.018 (0) | 0.010 (0) | 37.2 |
+| plain eps 8 | 0.185 (14) | 0.150 (12) | 38.0 |
+| robust eps 8 | 0.125 (11) | 0.106 (7) | 38.3 |
+| plain eps 16, 200 steps | 0.296 (16) | 0.210 (14) | 32.5 |
 
-### Ablation v2: eps and Gaussian-noise training vs random-noise control (8 images, 1 prompt)
-| Variant | none | JPEG q75 | resize 50% | PSNR |
-|---|---|---|---|---|
-| random-noise control (eps 6) | 0.209 | 0.134 | 0.079 | 39.6 |
-| eps 4 | 0.340 | 0.181 | 0.112 | 43.6 |
-| eps 6 | 0.425 | 0.251 | 0.212 | 40.4 |
-| eps 8 | 0.442 | 0.277 | 0.207 | 38.1 |
-| eps 12 | 0.503 | 0.308 | 0.258 | 34.9 |
-| eps 6, Gaussian-noise training | 0.352 | 0.217 | 0.193 | 40.9 |
-| eps 8, Gaussian-noise training | 0.392 | 0.279 | 0.241 | 38.5 |
-| eps 12, Gaussian-noise training | 0.427 | 0.321 | 0.251 | 35.1 |
+### After post-processing, strength 0.3
+| Variant | none | JPEG q75 | resize 50% |
+|---|---|---|---|
+| random-noise control (eps 8) | 0.018 (0) | 0.006 (0) | 0.007 (0) |
+| plain eps 8 | 0.182 (15) | 0.027 (0) | 0.029 (1) |
+| robust eps 8 | 0.128 (9) | 0.059 (2) | 0.040 (1) |
+| robust eps 12 | 0.188 (15) | 0.094 (6) | 0.069 (5) |
 
-Findings: the perturbation is far stronger than random noise of equal magnitude, but a large
-part of the effect is lost after JPEG/resize. Training through Gaussian noise did not help;
-v3 below fixes this with transform-aware training.
+Run-to-run GPU nondeterminism explains the small difference between the two plain eps 8 rows.
 
-### Ablation v3: transform-robust (EOT) training (8 images, 1 prompt)
-JPEG q50 is held out of training (robust training samples JPEG quality 55-90, so q50 is only
-slightly outside that range).
+### Scene-changing edits, strength 0.6 (mean CLIP prompt-adherence drop; higher = more broken)
+| Variant | none | JPEG q75 |
+|---|---|---|
+| random-noise control (eps 8) | -0.017 | -0.005 |
+| plain eps 8 | -0.018 | -0.014 |
+| robust eps 8 | -0.025 | -0.019 |
+| plain eps 16, 200 steps | -0.029 | -0.010 |
 
-| Variant | none | JPEG q75 | JPEG q50 | resize 50% | blur | PSNR |
-|---|---|---|---|---|---|---|
-| random-noise control (eps 8) | 0.255 | 0.156 | 0.170 | 0.097 | 0.165 | 37.2 |
-| eps 8, plain PGD | 0.445 | 0.279 | 0.249 | 0.224 | 0.271 | 38.1 |
-| eps 6, robust | 0.378 | 0.310 | 0.269 | 0.282 | 0.307 | 40.7 |
-| eps 8, robust | 0.406 | 0.336 | 0.304 | 0.310 | 0.336 | 38.3 |
-| eps 12, robust | 0.462 | 0.381 | 0.353 | 0.384 | 0.390 | 34.9 |
+Only 0 to 2 of 16 images show a drop above 0.05 (control: 0). Protected edits adhere to the
+prompt as well as unprotected ones.
 
-Findings:
-- At eps 8, robust training raises the score after post-processing by about 20% (JPEG q75),
-  22% (JPEG q50, held out), 38% (resize) and 24% (blur), at a cost of about 9% on unprocessed
-  images, with PSNR unchanged.
-- Robust eps 6 beats plain eps 8 on average on every post-processed column while being less
-  visible (40.7 vs 38.1 dB); per image it wins 4/8 (JPEG q75) to 7/8 (blur), so that one is
-  a weaker claim than the eps 8 comparison.
-- Per-image paired comparison, robust eps 8 vs plain eps 8: higher after post-processing in
-  28 of 32 image/attack pairs (resize 8/8, JPEG q50 7/8, blur 7/8, JPEG q75 6/8); lower on
-  unprocessed images in 7 of 8. The JPEG q75 gain is within noise at n=8 (+0.057, s.e. 0.040);
-  the resize, blur and JPEG q50 gains are about 2.5 to 4 standard errors.
-- Every protected variant stays well above the random-noise control.
-- Still only partial protection: scores after JPEG/resize are below the unprocessed scores.
+### Earlier ablations (kept for transparency)
+`ablation_v2.csv` and `ablation_v3.csv` used LPIPS between edits at strength 0.6 and are
+superseded: that metric could not separate real protection from noise. The v3 finding that
+robust training raises that score after JPEG/resize is consistent with the post-processing
+table above, but the absolute claims in those tables should not be read as "edits destroyed".
 
 ## Limitations
-- Small evaluation: 16 images (15 web-sourced portraits not redistributed here, 1 personal
-  photo), 1-2 prompts, one seed. No confidence intervals.
-- LPIPS between edits measures how different the edits are, not how "broken" they look;
-  include visual examples (own photos only) alongside the numbers.
-- Tested only against SD1.5 img2img. Transfer to SDXL, InstructPix2Pix, inpainting and
-  face-swap models is untested.
-- Images are resized to max 512 px.
-- Purification (e.g. DiffPure), heavy compression, and screenshots can remove the protection.
-  This is an arms race, not a guarantee.
+- Small evaluation: 16 images, one prompt per experiment, one seed, no confidence intervals.
+- Shift measures how far the edit drifts from the source, not how broken it looks. Visual
+  inspection of a few own photos is needed alongside the numbers.
+- Tested only against SD1.5 img2img. Inpainting, InstructPix2Pix, SDXL and face-swap models
+  are untested.
+- Images are resized to at most 512 px.
+- Not a guarantee. Re-saving, resizing, screenshots and purification (e.g. DiffPure) weaken or
+  remove the effect, and newer models may ignore it.
+
+## Next steps
+1. A denoiser-level attack (Mist / PhotoGuard diffusion attack) instead of encoder-only.
+2. Inpainting and InstructPix2Pix evaluation; SDXL transfer.
+3. More images, prompts and seeds with confidence intervals.
+4. A blind visual rating of "broken vs normal" edits.
 
 ## Responsible use
 Intended to help people protect their own photos. Do not publish AI edits of other people's

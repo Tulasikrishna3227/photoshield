@@ -2,10 +2,11 @@ import gradio as gr
 
 from protect import protect
 
-NOTE = ("Protection is partial, not a guarantee. It targets Stable Diffusion based editors and can be "
-        "weakened by heavy compression, resizing, screenshots or purification. Download the PNG; "
-        "re-saving as JPEG reduces the effect. Images are resized to at most 512 px.")
-STRENGTH = {"Standard (6/255)": 6, "Strong (8/255)": 8, "Maximum (12/255)": 12}
+NOTE = ("Protection is partial, not a guarantee. It targets Stable Diffusion based editors and works "
+        "best against low-strength edits of the original PNG. Re-saving as JPEG or resizing weakens it "
+        "(robust mode keeps part of the effect). Download the PNG and share it as PNG where possible. "
+        "Images are resized to at most 512 px.")
+STRENGTH = {"Standard (8/255)": 8, "Strong (12/255, more visible)": 12}
 
 
 def run(img, strength, steps, robust, progress=gr.Progress()):
@@ -18,14 +19,13 @@ def run(img, strength, steps, robust, progress=gr.Progress()):
 
 
 with gr.Blocks(title="PhotoShield") as demo:
-    gr.Markdown("# PhotoShield\nInvisible protection that makes Stable Diffusion edits of your photo "
-                "come out distorted.")
+    gr.Markdown("# PhotoShield\nAdds an invisible perturbation that disrupts Stable Diffusion edits of your photo.")
     with gr.Row():
         inp = gr.Image(type="pil", label="Original photo")
         out = gr.Image(type="pil", label="Protected photo")
-    strength = gr.Radio(list(STRENGTH), value="Strong (8/255)", label="Strength")
+    strength = gr.Radio(list(STRENGTH), value="Strong (12/255, more visible)", label="Strength")
     steps = gr.Slider(20, 200, value=100, step=10, label="Optimization steps (more = stronger, slower)")
-    robust = gr.Checkbox(value=True, label="Robust mode (recommended: survives JPEG/resize/blur better)")
+    robust = gr.Checkbox(value=True, label="Robust mode (recommended: keeps part of the effect after JPEG/resize)")
     btn = gr.Button("Protect", variant="primary")
     file = gr.File(label="Download PNG")
     gr.Markdown(NOTE)
