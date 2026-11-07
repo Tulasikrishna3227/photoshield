@@ -33,9 +33,8 @@ class Clip:
     @torch.no_grad()
     def score(self, im, text):
         x = self.p(text=[text], images=im, return_tensors="pt", padding=True).to(DEVICE)
-        i = self.m.get_image_features(pixel_values=x["pixel_values"])
-        t = self.m.get_text_features(input_ids=x["input_ids"], attention_mask=x["attention_mask"])
-        return torch.nn.functional.cosine_similarity(i, t).item()
+        out = self.m(**x)  # image_embeds / text_embeds are L2-normalised in every transformers version
+        return (out.image_embeds * out.text_embeds).sum(-1).item()
 
 
 def main():
